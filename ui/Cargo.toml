@@ -1,0 +1,22 @@
+[workspace]
+
+[package]
+name = "open-raid-z-installer-ui"
+version = "0.1.0"
+edition = "2021"
+description = "OpenRaidZ Installer の画面(Leptos、WASM)。元はTypeScript/Vite。"
+license = "MPL-2.0"
+
+[dependencies]
+leptos = { version = "0.8", features = ["csr"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde-wasm-bindgen = "0.6"
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+js-sys = "0.3"
+web-sys = { version = "0.3", features = ["Window", "Document", "Element", "HtmlElement", "Storage", "console"] }
+
+[profile.release]
+opt-level = "s"
+lto = true

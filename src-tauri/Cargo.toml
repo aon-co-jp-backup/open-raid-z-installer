@@ -1,0 +1,30 @@
+[workspace]
+
+[package]
+name = "open-raid-z-installer"
+version = "0.1.0"
+description = "OpenRaidZ Installer(Tauri)。画面はui/(Leptos、Rust)。"
+authors = ["石 塚 正 浩（MASAHIRO ISHIZUKA）"]
+edition = "2021"
+license = "MPL-2.0"
+
+[lib]
+name = "open_raid_z_installer_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-opener = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# ディスク検出・構成助言・zpoolプレビューのロジックは、Tauriに依存しない
+# `open_runo_installer_core`(兄弟リポジトリ`../open-raid-z`内)にある。その先の`open-cpu`・`RS-JSON`も兄弟配置が必要。既定ではCPUのみ
+# (`gpu` feature無効)。実機でGPU/NPUを使うときは`--features gpu`でビルドする。
+open_runo_installer_core = { path = "../../open-raid-z/open_runo_zfs_source/open_runo_installer_core" }
+
+[features]
+default = []
+gpu = ["open_runo_installer_core/gpu"]
