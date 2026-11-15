@@ -17,3 +17,5 @@
 - Verified: `cargo check` (src-tauri, ui), `trunk build`, and UI behaviour against a Tauri stub in a browser (language switching, RTL, disk selection enabling the apply button, status panel, benchmark, RAID10 preview). **Not verified**: a full run in a real Tauri window, building and testing the MSI installer, multiple resolutions/font sizes.
 
 License: MPL-2.0.
+
+再開用メッセージ・到達点は`CLAUDE.md`/`PORTING.md`(日英)。 / Status and the resume message are in `CLAUDE.md` / `PORTING.md` (JA/EN).
