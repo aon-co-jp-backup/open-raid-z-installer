@@ -1,0 +1,161 @@
+# PORTING
+
+## 到達点(2026-11-15)
+- 画面をTypeScript/ViteからRust(Leptos 0.8、WASM)へ書き直し、`cargo check`・`trunk build`・`cargo tauri build`(MSI 3.08MiB / NSISセットアップ 2.04MiB)まで成功。
+- 実機: ビルドしたexeを起動し、200% DPIで1600x1200と700x1100の2サイズを確認。`open_runo_installer_core`の実データ(CpuFallback、非管理者のため「ディスクが検出されません」警告)を表示。Tauri命令をスタブしたブラウザ確認で、言語切替・RTL・ディスク選択→適用ボタン有効化・対応状況・ベンチマーク・RAID10プレビューが動作。
+- **未確認**: 実ウィンドウでの「対応状況」ボタンのクリック(クリック後のキャプチャが取れず)、1600px幅での横スクロールバー(CSSは元のTS版と同一なので新規の不具合かは未切り分け)、下部固定ボタン、複数文字サイズ、MSI/NSISのインストール/アンインストール。初回起動で「対応状況」パネルが開いて見えた場面が1回あったが、再起動後は閉じており原因は未特定。
+- `src-tauri/tauri.conf.json`の`beforeBuildCommand`を`cd ui && trunk build --release`に修正済み(trunkは`ui/`で実行する必要がある)。
+
+## Status (2026-11-15)
+- The UI was rewritten from TypeScript/Vite to Rust (Leptos 0.8, WASM); `cargo check`, `trunk build` and `cargo tauri build` (MSI 3.08 MiB / NSIS setup 2.04 MiB) all succeed.
+- Real device: the built exe was launched and checked at 200% DPI in two sizes (1600x1200, 700x1100), showing real `open_runo_installer_core` data (CpuFallback; the "no disks detected" warning because it ran non-elevated). With the Tauri commands stubbed in a browser, language switching, RTL, disk selection enabling the apply button, the status panel, the benchmark and the RAID10 preview all worked.
+- **Not verified**: clicking the "Compatibility" button in the real window (the post-click capture failed), the horizontal scrollbar at 1600 px width (the CSS is identical to the TS version, so whether it is new is not isolated), pinned bottom buttons, several font sizes, MSI/NSIS install/uninstall. The Compatibility panel looked open once on a first launch but was closed after a restart; cause not identified.
+- `beforeBuildCommand` in `src-tauri/tauri.conf.json` was fixed to `cd ui && trunk build --release` (trunk must run inside `ui/`).
+
+## 再開用メッセージ(別アカウント向け・2026-11-15)
+次をそのままClaude Codeに貼り付けてください。
+
+> `F:\open-raid-z-installer`(GitHub: aon-co-jp/open-raid-z-installer)の続きです。`CLAUDE.md`と`PORTING.md`の「再開用メッセージ」を読んでください。やること: (1) `src-tauri`で`cargo tauri build`(PATHに`%USERPROFILE%\.cargoin`、`CARGO_TARGET_DIR`は`F:db-target\oritauri`など)し、生成された`bundle/msi`と`bundle/nsis`を使って、実ウィンドウの通し試験(「対応状況」ボタンの開閉、1600px幅で出る横スクロールバーの原因、複数解像度・文字サイズ、主要ボタンの下部固定)とインストール/アンインストール試験を行う。(2) 全て通ったら、`F:\open-raid-z`の`open_runo_zfs_source/open_runo_installer`(旧TypeScript版)を削除してpushし、通った項目/通らなかった項目を正直に報告する。失敗が残るなら削除しない。兄弟配置(`../open-raid-z`・`../open-cpu`・`../RS-JSON`)が必要。日本語を含むファイルはPythonかEdit/Writeで編集し、PowerShellのSet-Contentは使わない。
+
+## Resume message (for the other account, 2026-11-15)
+Paste the following into Claude Code as is.
+
+> Continue `F:\open-raid-z-installer` (GitHub: aon-co-jp/open-raid-z-installer). Read the "Resume message" in `CLAUDE.md` and `PORTING.md`. To do: (1) run `cargo tauri build` in `src-tauri` (put `%USERPROFILE%\.cargoin` on PATH; use a `CARGO_TARGET_DIR` such as `F:db-target\oritauri`), then use the generated `bundle/msi` and `bundle/nsis` to run the end-to-end tests: real window (open/close the "Compatibility" panel, find the cause of the horizontal scrollbar seen at 1600 px width, several resolutions and font sizes, primary buttons pinned to the bottom) and install/uninstall tests. (2) If everything passes, delete the old TypeScript `open_runo_zfs_source/open_runo_installer` in `F:\open-raid-z`, push, and report honestly what passed and what did not. If failures remain, do not delete. Sibling checkouts (`../open-raid-z`, `../open-cpu`, `../RS-JSON`) are required. Edit files containing Japanese with Python or Edit/Write, never PowerShell Set-Content.
+
+## API 方針: REST 全廃・gRPC / Connect へ (2026-11-04)
+
+### 日本語
+- **REST は全廃する。新しい API は REST で作らない。** ブラウザや `curl` から呼ぶ API は **Connect の単純呼び出し**(`POST /<パッケージ>.<Service>/<Method>`、`content-type: application/json`、本文は JSON)、サービス間は **gRPC / gRPC-web**(RPoem の管理API `open_runo.admin.v1.Admin` と同じ流儀)。ストリーミングは、必要になってから。
+- **既存の REST は、触るときに順に移す。** 移したら旧 REST の経路は消す。移行が終わるまで残るが、**新規には追加しない**。
+- **JSON は RS-JSON に統一**する(読み込みは `from_str_secure` / `parse_secure` でサイズ・深さ・重複キーの上限つき、書き出しは `rust_json::fast`)。ブラウザの WASM に `prost` は入れない(サイズが増えるため)。
+- **例外(自分たちの API ではなく、相手の規格が決めているもの)**: ACME、OAuth/OIDC のコールバック、第三者(GitHub など)からの Webhook、ヘルスチェック、静的ファイル配信、OTLP など。これらは規格どおりの HTTP を受ける。
+- 参考実装: `RPoem`(`open_runo.admin.v1.Admin`)、`open-easy-web`(`server/src/connect.rs`、`proto/open_easy_web/admin/v1/admin.proto`)。
+- ※ このリポジトリのコードが既に方針どおりかどうかは、各リポジトリの現状による。この節は方針の記録であり、コードの変更を意味しない。
+
+### English
+- **REST is being abolished. New APIs are not built as REST.** APIs called from browsers or `curl` use **Connect unary calls** (`POST /<package>.<Service>/<Method>`, `content-type: application/json`, JSON body); service-to-service calls use **gRPC / gRPC-web** (the same style as RPoem's admin API `open_runo.admin.v1.Admin`). Streaming only when it is actually needed.
+- **Existing REST endpoints are migrated one by one, when they are touched.** The old REST route is removed once migrated. Until migration is finished they remain, but **no new ones are added**.
+- **JSON is unified on RS-JSON**: reading with `from_str_secure` / `parse_secure` (size, depth and duplicate-key limits), writing with `rust_json::fast`. `prost` is not put into browser WASM (it would grow the binary).
+- **Exceptions (shapes dictated by someone else's standard, not our own API)**: ACME, OAuth/OIDC callbacks, webhooks from third parties (e.g. GitHub), health checks, static file serving, OTLP, and so on. These accept plain HTTP as the standard requires.
+- Reference implementations: `RPoem` (`open_runo.admin.v1.Admin`) and `open-easy-web` (`server/src/connect.rs`, `proto/open_easy_web/admin/v1/admin.proto`).
+- Note: whether the code in a given repository already follows this policy depends on that repository. This section records the policy; it does not mean the code has been changed.
+
+### Deutsch (KI-Übersetzung, redaktionell überarbeitet; noch nicht von Muttersprachlern geprüft)
+- **REST wird vollständig abgeschafft; neue APIs entstehen nicht mehr als REST.** APIs, die aus dem Browser oder per `curl` aufgerufen werden, verwenden **unäre Connect-Aufrufe** (`POST /<Paket>.<Service>/<Methode>`, `content-type: application/json`, JSON-Body). Zwischen Diensten kommen **gRPC bzw. gRPC-web** zum Einsatz, im selben Stil wie die Admin-API von RPoem (`open_runo.admin.v1.Admin`). Streaming wird erst ergänzt, wenn es tatsächlich gebraucht wird.
+- **Bestehende REST-Endpunkte werden schrittweise umgestellt, und zwar immer dann, wenn man ohnehin an ihnen arbeitet.** Sobald ein Endpunkt umgestellt ist, wird die alte REST-Route entfernt. Bis zum Abschluss der Migration bleiben die übrigen bestehen, es werden aber **keine neuen mehr hinzugefügt**.
+- **JSON wird einheitlich über RS-JSON verarbeitet**: Gelesen wird mit `from_str_secure` bzw. `parse_secure` (mit Obergrenzen für Größe, Verschachtelungstiefe und doppelte Schlüssel), geschrieben mit `rust_json::fast`. `prost` wird nicht in das Browser-WASM aufgenommen, da es die Datei vergrößern würde.
+- **Ausnahmen (Schnittstellen, deren Form ein fremder Standard vorgibt und die nicht zu unserer eigenen API gehören)**: ACME, OAuth/OIDC-Callbacks, Webhooks von Drittanbietern (z. B. GitHub), Health-Checks, die Auslieferung statischer Dateien, OTLP und Ähnliches. Diese nehmen, wie vom jeweiligen Standard verlangt, gewöhnliches HTTP entgegen.
+- Referenzimplementierungen: `RPoem` (`open_runo.admin.v1.Admin`) und `open-easy-web` (`server/src/connect.rs`, `proto/open_easy_web/admin/v1/admin.proto`).
+- Hinweis: Ob der Code eines einzelnen Repositorys diese Richtlinie bereits erfüllt, hängt vom jeweiligen Repository ab. Dieser Abschnitt dokumentiert lediglich die Richtlinie; er besagt nicht, dass der Code schon angepasst wurde.
+
+### Русский (перевод выполнен с помощью ИИ и отредактирован; носителями языка пока не проверен)
+- **От REST мы полностью отказываемся; новые API больше не создаются в стиле REST.** API, к которым обращаются из браузера или через `curl`, используют **унарные вызовы Connect** (`POST /<пакет>.<Service>/<Method>`, `content-type: application/json`, тело запроса — JSON). Для взаимодействия между сервисами применяются **gRPC и gRPC-web** — в том же стиле, что и административный API RPoem (`open_runo.admin.v1.Admin`). Потоковая передача данных добавляется лишь тогда, когда в ней действительно возникает необходимость.
+- **Существующие REST-эндпоинты переводятся поэтапно — по мере того, как с ними приходится работать.** После перевода старый REST-маршрут удаляется. Пока миграция не завершена, оставшиеся эндпоинты сохраняются, но **новые не добавляются**.
+- **Работа с JSON унифицирована на основе RS-JSON**: чтение — через `from_str_secure` или `parse_secure` (с ограничениями на размер, глубину вложенности и повторяющиеся ключи), запись — через `rust_json::fast`. `prost` в браузерный WASM не включается, поскольку это увеличило бы размер файла.
+- **Исключения (интерфейсы, форму которых определяет чужой стандарт, а не наш собственный API)**: ACME, обратные вызовы OAuth/OIDC, вебхуки сторонних сервисов (например, GitHub), проверки работоспособности, раздача статических файлов, OTLP и тому подобное. Такие интерфейсы принимают обычный HTTP, как того требует соответствующий стандарт.
+- Эталонные реализации: `RPoem` (`open_runo.admin.v1.Admin`) и `open-easy-web` (`server/src/connect.rs`, `proto/open_easy_web/admin/v1/admin.proto`).
+- Примечание: соответствует ли код конкретного репозитория этой политике, зависит от самого репозитория. Данный раздел лишь фиксирует политику и не означает, что код уже изменён.
+
+## API 方針の補足: 用語の整理と使い分け (2026-11-04)
+
+### 日本語
+**1つに統一するものではなく、別の層の話です。** 「REST の代わり」になるのは Connect・gRPC・GraphQL だけで、WASM は画面を作る技術です。
+
+| 用語 | 何か | REST の代わりか |
+|---|---|---|
+| REST | URL と HTTP メソッドで操作を表す API の作り方 | 全廃する側 |
+| **Connect** | `POST /サービス名/メソッド名` に JSON を送る形式。`curl` でもブラウザの `fetch` でも呼べる | はい(**採用**) |
+| **gRPC** | 同じ「サービス/メソッド」の考え方を、バイナリ(protobuf)と HTTP/2 で行う形式。速く、ストリーミングも得意 | はい(**サービス同士に採用**) |
+| gRPC-web | gRPC のブラウザ向けの変形版 | はい(必要なら) |
+| GraphQL | 欲しい項目を問い合わせる形式 | 一部だけ(**問い合わせ(読み取り)専用**) |
+| WASM | Rust をブラウザの中で動かす仕組み | いいえ(画面を作る技術) |
+
+- **ブラウザの画面や `curl` から呼ぶ API は Connect**(POST、JSON を RS-JSON で読み書き)。ブラウザの WASM は素の gRPC を話せず、Connect なら `fetch` のままで、`prost` を足さずに済む(画面のサイズも増えない)。
+- **サービス同士の通信(サーバー間、重い処理、ストリーミング)は gRPC。** 多くは Connect で足りるので、ストリーミングが必要になった所だけ gRPC に上げる。
+- **GraphQL は、まとめて問い合わせたいときの読み取り専用。** 書き込み(操作)には使わない。
+- **WASM は画面を作る技術として、そのまま使う。** 画面から呼ぶ API が Connect になっただけ。
+- 外部の規格が形を決めるもの(ACME、OAuth のコールバック、第三者の Webhook、ヘルスチェック、静的ファイル、OTLP)は、規格どおりの HTTP のまま。
+- **迷ったら Connect。**
+
+### English
+**These are not alternatives to unify; they sit at different layers.** Only Connect, gRPC and GraphQL can replace REST; WASM is a way to build the UI.
+
+| Term | What it is | Replaces REST? |
+|---|---|---|
+| REST | API style that expresses operations through URLs and HTTP methods | The thing being abolished |
+| **Connect** | `POST /Service/Method` with a JSON body; callable from `curl` and from a browser `fetch` | Yes (**adopted**) |
+| **gRPC** | The same service/method idea over binary (protobuf) and HTTP/2; fast, good at streaming | Yes (**for service-to-service**) |
+| gRPC-web | A browser-friendly variant of gRPC | Yes (if needed) |
+| GraphQL | A query language: ask for exactly the fields you want | Partly (**read-only queries**) |
+| WASM | Runs Rust inside the browser | No (a UI technology) |
+
+- **APIs called from browser screens or `curl` use Connect** (POST, JSON read and written with RS-JSON). Browser WASM cannot speak plain gRPC; with Connect it stays a `fetch`, and `prost` is not needed (the binary does not grow).
+- **Service-to-service calls (server to server, heavy work, streaming) use gRPC.** Connect is enough in most places; move a call to gRPC only where streaming is actually needed.
+- **GraphQL is read-only**, for queries that gather several pieces of data. It is not used for writes (operations).
+- **WASM stays as the way to build the UI.** The API it calls simply became Connect.
+- Interfaces whose shape an outside standard dictates (ACME, OAuth callbacks, third-party webhooks, health checks, static files, OTLP) stay plain HTTP.
+- **When in doubt, use Connect.**
+
+### Deutsch (KI-Übersetzung, sprachlich überarbeitet; noch nicht von Muttersprachlern geprüft)
+**Es geht nicht darum, eine einzige Technik auszuwählen – die Begriffe liegen auf unterschiedlichen Ebenen.** Als Ersatz für REST kommen nur Connect, gRPC und GraphQL in Frage; WASM dagegen ist eine Technik, mit der die Benutzeroberfläche gebaut wird.
+
+| Begriff | Was ist das? | Ersatz für REST? |
+|---|---|---|
+| REST | Ein API-Stil, bei dem Operationen über URLs und HTTP-Methoden ausgedrückt werden | wird abgeschafft |
+| **Connect** | `POST /Dienst/Methode` mit JSON im Body; aufrufbar mit `curl` ebenso wie mit `fetch` im Browser | ja (**gewählt**) |
+| **gRPC** | Dasselbe Prinzip aus Dienst und Methode, aber über binäres protobuf und HTTP/2; schnell und gut für Streaming geeignet | ja (**zwischen Diensten**) |
+| gRPC-web | Eine für den Browser angepasste Variante von gRPC | ja (bei Bedarf) |
+| GraphQL | Abfragesprache, mit der man genau die benötigten Felder anfordert | teilweise (**nur für lesende Abfragen**) |
+| WASM | Führt Rust-Code direkt im Browser aus | nein (Technik für die Oberfläche) |
+
+- **APIs, die von Browseroberflächen oder per `curl` aufgerufen werden, verwenden Connect** (POST; JSON wird mit RS-JSON gelesen und geschrieben). WASM im Browser kann kein reines gRPC sprechen. Mit Connect bleibt es bei einem gewöhnlichen `fetch`, und `prost` ist nicht nötig – die WASM-Datei wird dadurch nicht größer.
+- **Für die Kommunikation zwischen Diensten (Server zu Server, rechenintensive Aufgaben, Streaming) wird gRPC eingesetzt.** In den meisten Fällen reicht Connect aus; auf gRPC wird nur dort umgestellt, wo Streaming tatsächlich gebraucht wird.
+- **GraphQL dient ausschließlich lesenden Abfragen**, wenn mehrere Informationen gebündelt abgefragt werden sollen. Für Schreibzugriffe (Operationen) wird es nicht verwendet.
+- **WASM bleibt die Technik für die Oberfläche.** Geändert hat sich lediglich, dass die aufgerufene API nun auf Connect beruht.
+- Schnittstellen, deren Form durch einen externen Standard festgelegt ist (ACME, OAuth-Callbacks, Webhooks von Drittanbietern, Health-Checks, statische Dateien, OTLP), bleiben gewöhnliches HTTP.
+- **Im Zweifel: Connect.**
+
+### Русский (перевод выполнен с помощью ИИ и литературно отредактирован; носителями языка пока не проверен)
+**Это не варианты, из которых нужно выбрать один, а технологии разных уровней.** Заменить REST могут только Connect, gRPC и GraphQL; WASM же — это способ создания пользовательского интерфейса.
+
+| Термин | Что это | Заменяет REST? |
+|---|---|---|
+| REST | Стиль построения API, при котором операции выражаются через URL и HTTP-методы | отменяется |
+| **Connect** | `POST /Сервис/Метод` с телом в формате JSON; вызывается как из `curl`, так и из браузерного `fetch` | да (**выбран**) |
+| **gRPC** | Тот же принцип «сервис — метод», но поверх двоичного формата protobuf и HTTP/2; работает быстро и хорошо подходит для потоковой передачи | да (**для связи между сервисами**) |
+| gRPC-web | Адаптированный для браузера вариант gRPC | да (при необходимости) |
+| GraphQL | Язык запросов: клиент запрашивает ровно те поля, которые ему нужны | частично (**только запросы на чтение**) |
+| WASM | Позволяет выполнять код на Rust прямо в браузере | нет (технология для интерфейса) |
+
+- **API, которые вызываются из браузерных интерфейсов или через `curl`, строятся на Connect** (POST; JSON читается и записывается через RS-JSON). Браузерный WASM не умеет работать с «чистым» gRPC. С Connect достаточно обычного `fetch`, а `prost` не требуется — размер WASM-файла не увеличивается.
+- **Для обмена между сервисами (сервер — сервер, ресурсоёмкие задачи, потоковая передача) применяется gRPC.** В большинстве случаев достаточно Connect; на gRPC переходят только там, где потоковая передача действительно необходима.
+- **GraphQL используется только для чтения**, когда нужно получить сразу несколько связанных данных. Для записи (операций) он не применяется.
+- **WASM по-прежнему остаётся технологией для интерфейса.** Изменилось лишь то, что вызываемый им API теперь построен на Connect.
+- Интерфейсы, форма которых задана внешним стандартом (ACME, обратные вызовы OAuth, вебхуки сторонних сервисов, проверки работоспособности, статические файлы, OTLP), остаются обычным HTTP.
+- **Если есть сомнения — выбирайте Connect.**
+
+## 補足: ストリーミングの対応状況 (2026-11-07)
+
+### 日本語
+- **server-streaming は対応済み**(`RPoem` の `open-runo-connect-*`、RPoem main `1570371`・`34cb595`)。Connect は `application/connect+json` のエンベロープ、gRPC / gRPC-web でも受ける。途中エラーは終端フレームで返し、件数・時間の上限、切断時の資源解放、実 TCP での `WatchEvents` 試験を通過。**VPS には未反映**。
+- **使いどころ**: 変更の監視、進捗の逐次通知、長い生成の逐次返却など、サーバーから複数回返したい所。1回で済む呼び出しは従来どおり Connect の単純呼び出し。client-streaming / 双方向は、必要になってから。
+- 独語・露語は未追記(日英のみ)。
+
+### English
+- **Server-streaming is supported** (`open-runo-connect-*` in RPoem, main `1570371` / `34cb595`): `application/connect+json` envelopes, also via gRPC / gRPC-web; mid-stream errors end with a terminal frame; item/time limits, resource release on disconnect, and a real-TCP `WatchEvents` test pass. **Not yet deployed to the VPS.**
+- **When to use**: watching changes, progress updates, incremental results. One-shot calls stay plain Connect unary. Client-streaming / bidirectional only when needed.
+- German and Russian not yet added.
+## 2026-11-17 更新: 通し試験の結果と再開用メッセージ / Update: end-to-end test results and resume message
+**日本語**: 通し試験(NSISセットアップ、ユーザー単位・UAC不要): 静かなインストール→起動→アンインストールが成功(終了コード0、アンインストール後にフォルダ消滅)。実ウィンドウで「対応状況」ボタンの開閉・実データ表示・ページ最下部まで到達を確認。1600x1200/1000x1300/700x1100で表示を確認。**横スクロールバーはヘッダーの折り返し不足が原因**で、`ui/styles.css`の`.app_header`と`.header_actions`に`flex-wrap: wrap`を追加して解消(直した版をビルド→インストール→目視で消えたことを確認→アンインストール)。**未実施**: MSIのインストール/アンインストール(MSIは全ユーザー用でUAC昇格が必要、Claudeは昇格できない。ユーザーが管理者で実行する)、非管理者では物理ディスクが列挙されないため管理者実行時の実ディスク表示、文字サイズ変更、主要ボタンの「下部固定」(この画面は縦スクロール構成で固定ボタン無し、仕様として許容するか要判断)。**旧TypeScript版`open_runo_zfs_source/open_runo_installer`は未削除**(MSI未試験のため。MSIも通ったら削除してpush)。
+**再開用メッセージ(そのまま貼り付け)**: 「`F:\open-raid-z-installer`で、MSI(`F:db-target\oritaurieleaseundle\msi\`、無ければ`src-tauri`で`cargo tauri build`)を管理者権限でインストール→起動→アンインストールして結果を確認し、管理者実行でのディスク一覧も確認して。全て通ったら`F:\open-raid-z`の旧`open_runo_zfs_source/open_runo_installer`を削除してpushし、`F:uno`の`PORTING.md`の該当記述を更新して。通らない項目があれば削除せず原因を報告して。」
+**English**: End-to-end results (NSIS setup, per-user, no UAC): silent install, launch and uninstall succeeded (exit code 0; the folder is gone afterwards). In the real window the "Compatibility" panel opens and closes, shows real data, and the page bottom is reachable; checked at 1600x1200 / 1000x1300 / 700x1100. **The horizontal scrollbar was caused by the header not wrapping**; fixed by adding `flex-wrap: wrap` to `.app_header` and `.header_actions` in `ui/styles.css` (rebuilt, installed, visually confirmed gone, uninstalled). **Not done**: MSI install/uninstall (the MSI is per-machine and needs UAC elevation, which Claude cannot do; the user must run it as administrator), the real-disk list when run as administrator (non-elevated runs enumerate no physical disks), font-size changes, and "pinned bottom button" (this UI scrolls vertically and has no pinned button; decide whether that is acceptable). **The old TypeScript `open_runo_zfs_source/open_runo_installer` is NOT deleted** (the MSI is untested; delete and push once it passes).
+**Resume message (paste as is)**: "In `F:\open-raid-z-installer`, install the MSI (`F:db-target\oritaurieleaseundle\msi\`, or run `cargo tauri build` in `src-tauri` if missing) as administrator, launch, uninstall and check the result, and also check the disk list when run as administrator. If everything passes, delete the old `open_runo_zfs_source/open_runo_installer` in `F:\open-raid-z`, push, and update the matching entry in `F:uno`'s `PORTING.md`. If anything fails, do not delete and report the cause."
+
+
+## 2026-11-17 追記2: MSI通し試験(管理者) / MSI test (elevated)
+**日本語**: `scripts-msi-test.ps1`を管理者で実行(UAC承認後)。MSIのインストール(exit 0)→`C:\Program Files\OpenRaidZ Installer\open-raid-z-installer.exe`起動(8秒後も生存)→アンインストール(exit 0)→exe残存なし、で合格。NSIS(per-user)も合格済み。**未確認**: 管理者実行でのディスク一覧、文字サイズ変更、下固定ボタン(UIにボタン無し)。旧TypeScript版`open_runo_zfs_source/open_runo_installer`(open-raid-z)は主要経路が通ったため削除対象。
+**English**: Ran `scripts-msi-test.ps1` elevated (after UAC). MSI install (exit 0) -> launch of the installed exe (alive after 8 s) -> uninstall (exit 0) -> no files left: PASS. NSIS per-user also passed. **Unverified**: disk list when run as admin, font-size changes, bottom-pinned buttons (the UI has none). The old TypeScript installer in open-raid-z is slated for deletion.
+
+### 再開メッセージ / Resume message
+「`F:\open-raid-z-installer`と`F:uno`、open-raid-z(新規clone)を再開。MSI/NSIS通し試験は合格。未了=管理者でのディスク一覧・文字サイズ確認、旧TS版`open_runo_installer`削除(済んでいなければ)のpushとrunoのPORTING.md未了1更新。」
+"Resume `F:\open-raid-z-installer`, `F:uno` and a fresh open-raid-z clone. MSI/NSIS tests pass. Open: admin disk list and font-size checks; push the deletion of the old TS `open_runo_installer` if not yet done and update PORTING.md item 1 in runo."
